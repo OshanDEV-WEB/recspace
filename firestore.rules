@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+    function isAdmin() {
+      return signedIn() && userDoc(request.auth.uid).data.role == "admin";
+    }
+
+    // A user may read their own profile. New accounts can only create a student role.
+    // Admin role is assigned manually in the Firebase Console as explained in README.md.
+    match /users/{uid} {
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.role == "student";
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.uid == resource.data.uid;
+      allow delete: if isAdmin();
+
+      match /progress/{lessonId} {
+        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.seconds is number
+          && request.resource.data.seconds >= 0
+          && request.resource.data.seconds <= 31536000
+          && request.resource.data.completed is bool;
+        allow delete: if signedIn() && (request.auth.uid == uid || isAdmin());
+      }
+    }
+
+    match /subjects/{subjectId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /lessons/{lessonId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /notes/{noteId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+  }
+}
